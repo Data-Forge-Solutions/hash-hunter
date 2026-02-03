@@ -46,12 +46,43 @@ pub struct MatchResult {
     pub target: Target,
 }
 
-/// Search the directory for matching hashes.
+/// Search a directory tree for files whose hashes match configured targets.
+///
+/// This walks the directory specified in [`SearchConfig::dir`] (without following
+/// symlinks) and hashes only files that are relevant to the configured targets.
+/// If a target includes a [`Target::name`], hashing is limited to files with the
+/// same filename; otherwise all files are considered. Hashing uses the
+/// [`Algorithm`] configured in [`SearchConfig::algorithm`].
+///
+/// # Examples
+///
+/// ```no_run
+/// use std::path::PathBuf;
+///
+/// let config = hash_hunter::SearchConfig {
+///     dir: PathBuf::from("."),
+///     algorithm: hash_hunter::Algorithm::Sha256,
+///     targets: vec![hash_hunter::Target {
+///         hash: hash_hunter::parse_hex("d2d2d2d2")?,
+///         name: Some("example.txt".to_string()),
+///     }],
+///     threads: Some(4),
+/// };
+///
+/// let matches = hash_hunter::search(&config)?;
+/// println!("matched {} file(s)", matches.len());
+/// # Ok::<(), std::io::Error>(())
+/// ```
 ///
 /// # Errors
 ///
-/// Returns an error if no targets are provided, if the thread pool cannot be
-/// created, or if filesystem traversal fails.
+/// Returns an error if:
+/// - no targets are provided;
+/// - the global Rayon thread pool cannot be created;
+/// - or filesystem traversal fails.
+///
+/// Individual file hashing failures (for example, permission errors) are
+/// reported on stderr and do not abort the search.
 pub fn search(config: &SearchConfig) -> io::Result<Vec<MatchResult>> {
     if config.targets.is_empty() {
         return Err(io::Error::new(
@@ -121,12 +152,35 @@ pub fn search(config: &SearchConfig) -> io::Result<Vec<MatchResult>> {
     Ok(output)
 }
 
-/// Load batch targets from a file.
+/// Load hash targets from a batch file.
+///
+/// Each non-empty, non-comment line in the file must contain a hexadecimal hash
+/// followed by an optional filename:
+///
+/// ```text
+/// <hex-hash> [filename]
+/// ```
+///
+/// If the filename is present it is stored in [`Target::name`] and is later used
+/// by [`search`] to limit hashing to files with the same basename.
+///
+/// # Examples
+///
+/// ```no_run
+/// # use std::path::PathBuf;
+/// # use std::fs;
+/// let path = PathBuf::from("targets.txt");
+/// fs::write(&path, "d2d2d2d2 example.txt\n# comment line\n")?;
+/// let targets = hash_hunter::load_batch(&path)?;
+/// assert_eq!(targets.len(), 1);
+/// # Ok::<(), std::io::Error>(())
+/// ```
 ///
 /// # Errors
 ///
-/// Returns an error if the file cannot be read, if a line is malformed, or if
-/// a hash cannot be parsed.
+/// Returns an error if the file cannot be read, if a line is malformed, or if a
+/// hash cannot be parsed by [`parse_hex`]. Line numbers are included in
+/// formatting errors to aid debugging.
 pub fn load_batch(path: &Path) -> io::Result<Vec<Target>> {
     let file = File::open(path)?;
     let reader = BufReader::new(file);
@@ -159,7 +213,19 @@ pub fn load_batch(path: &Path) -> io::Result<Vec<Target>> {
     Ok(targets)
 }
 
-/// Parse a hex string into bytes.
+/// Parse a hexadecimal string into raw bytes.
+///
+/// The input is trimmed before decoding. This helper is used by [`load_batch`]
+/// and the CLI to convert user-provided hex strings into byte arrays suitable
+/// for hashing comparisons.
+///
+/// # Examples
+///
+/// ```
+/// let bytes = hash_hunter::parse_hex("0a0b0c")?;
+/// assert_eq!(bytes, vec![0x0a, 0x0b, 0x0c]);
+/// # Ok::<(), std::io::Error>(())
+/// ```
 ///
 /// # Errors
 ///
@@ -174,6 +240,15 @@ enum ResultEntry {
     Error { path: PathBuf, err: io::Error },
 }
 
+/// Partition targets into a filename map and a hash-only list.
+///
+/// This returns:
+/// - a map from filename to indices of [`Target`] entries with
+///   [`Target::name`] set, and
+/// - a list of indices for targets without filenames.
+///
+/// [`search`] uses this split to avoid hashing files that cannot possibly
+/// satisfy any target.
 fn split_targets(targets: &[Target]) -> (BTreeMap<String, Vec<usize>>, Vec<usize>) {
     let mut name_map: BTreeMap<String, Vec<usize>> = BTreeMap::new();
     let mut hash_only = Vec::new();
@@ -187,6 +262,16 @@ fn split_targets(targets: &[Target]) -> (BTreeMap<String, Vec<usize>>, Vec<usize
     (name_map, hash_only)
 }
 
+/// Compute the hash of a file using the selected [`Algorithm`].
+///
+/// This function opens the file at `path`, streams its contents into the
+/// appropriate hash implementation, and returns the resulting digest bytes. For
+/// BLAKE3, the specialized [`hash_blake3`] path is used; all other algorithms
+/// use [`hash_with_digest`].
+///
+/// # Errors
+///
+/// Returns an error if the file cannot be opened or read.
 fn compute_hash(path: &Path, algo: Algorithm) -> io::Result<Vec<u8>> {
     let file = File::open(path)?;
     let mut reader = BufReader::new(file);
@@ -203,6 +288,14 @@ fn compute_hash(path: &Path, algo: Algorithm) -> io::Result<Vec<u8>> {
     }
 }
 
+/// Hash a reader using a `Digest` implementation.
+///
+/// This helper is used by [`compute_hash`] for algorithms that implement the
+/// [`Digest`] trait. It reads the input in 128 KiB chunks to limit memory usage.
+///
+/// # Errors
+///
+/// Returns an error if the underlying reader cannot be read.
 fn hash_with_digest<D: Digest>(reader: &mut BufReader<File>) -> io::Result<Vec<u8>> {
     let mut hasher = D::new();
     let mut buffer = vec![0u8; 128 * 1024];
@@ -216,6 +309,14 @@ fn hash_with_digest<D: Digest>(reader: &mut BufReader<File>) -> io::Result<Vec<u
     Ok(hasher.finalize().to_vec())
 }
 
+/// Hash a reader using the BLAKE3 implementation.
+///
+/// BLAKE3 does not implement the [`Digest`] trait, so it uses its own hashing
+/// API. The read loop mirrors [`hash_with_digest`] to keep behavior consistent.
+///
+/// # Errors
+///
+/// Returns an error if the underlying reader cannot be read.
 fn hash_blake3(reader: &mut BufReader<File>) -> io::Result<Vec<u8>> {
     let mut hasher = blake3::Hasher::new();
     let mut buffer = vec![0u8; 128 * 1024];

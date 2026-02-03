@@ -55,6 +55,10 @@ enum AlgorithmArg {
 }
 
 impl From<AlgorithmArg> for hash_hunter::Algorithm {
+    /// Convert CLI arguments into the library [`hash_hunter::Algorithm`].
+    ///
+    /// This isolates CLI parsing from the library API so other callers can use
+    /// the strongly-typed enum without pulling in clap types.
     fn from(value: AlgorithmArg) -> Self {
         match value {
             AlgorithmArg::Md5 => hash_hunter::Algorithm::Md5,
@@ -70,6 +74,20 @@ impl From<AlgorithmArg> for hash_hunter::Algorithm {
     }
 }
 
+/// Parse CLI arguments, run a hash search, and report results.
+///
+/// This entry point orchestrates:
+/// - parsing user input via [`Cli`],
+/// - loading targets with [`hash_hunter::load_batch`] or
+///   [`hash_hunter::parse_hex`],
+/// - performing the search with [`hash_hunter::search`], and
+/// - printing matches or missing targets to stdout (plus optional output file
+///   writing).
+///
+/// # Errors
+///
+/// Returns an error if required arguments are missing, if hashes cannot be
+/// parsed, if the search fails, or if output cannot be written.
 fn main() -> std::io::Result<()> {
     let cli = Cli::parse();
     if cli.hash.is_none() && cli.batch.is_none() {
