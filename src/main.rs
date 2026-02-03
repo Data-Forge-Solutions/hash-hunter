@@ -1,3 +1,4 @@
+use std::fs;
 use std::path::PathBuf;
 
 use clap::{Parser, ValueEnum};
@@ -32,6 +33,10 @@ struct Cli {
     /// Number of hashing threads (defaults to logical CPUs)
     #[arg(long)]
     threads: Option<usize>,
+
+    /// Write results to a text file at the given path
+    #[arg(long)]
+    output: Option<PathBuf>,
 }
 
 #[derive(Copy, Clone, Debug, ValueEnum)]
@@ -90,6 +95,7 @@ fn main() -> std::io::Result<()> {
     })?;
 
     let mut found = vec![false; targets.len()];
+    let mut output_lines = Vec::new();
     for result in results {
         if let Some((idx, _)) = targets.iter().enumerate().find(|(_, target)| {
             target.hash == result.target.hash && target.name == result.target.name
@@ -101,7 +107,9 @@ fn main() -> std::io::Result<()> {
                     .as_ref()
                     .map(|value| format!(" ({value})"))
                     .unwrap_or_default();
-                println!("match: {}{}", result.path.display(), name_display);
+                let line = format!("match: {}{}", result.path.display(), name_display);
+                println!("{line}");
+                output_lines.push(line);
                 found[idx] = true;
             }
         }
@@ -115,8 +123,18 @@ fn main() -> std::io::Result<()> {
                 .as_ref()
                 .map(|value| format!(" ({value})"))
                 .unwrap_or_default();
-            println!("missing: {}{}", hex::encode(&target.hash), name_display);
+            let line = format!("missing: {}{}", hex::encode(&target.hash), name_display);
+            println!("{line}");
+            output_lines.push(line);
         }
+    }
+
+    if let Some(path) = cli.output {
+        let mut contents = output_lines.join("\n");
+        if !contents.is_empty() {
+            contents.push('\n');
+        }
+        fs::write(path, contents)?;
     }
 
     Ok(())

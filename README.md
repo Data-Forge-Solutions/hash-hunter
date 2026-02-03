@@ -38,3 +38,9 @@ Batch mode (one target per line):
 ```bash
 cargo run -- --dir ./data --algo sha256 --batch batch.txt
 ```
+
+Write results to a text file:
+
+```bash
+cargo run -- --dir ./data --hash <hex-hash> --output results.txt
+```
