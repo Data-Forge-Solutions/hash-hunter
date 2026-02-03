@@ -1,3 +1,5 @@
+#![deny(clippy::pedantic)]
+
 use std::collections::BTreeMap;
 use std::fs::File;
 use std::io::{self, BufRead, BufReader, Read};
@@ -8,6 +10,7 @@ use digest::Digest;
 use rayon::prelude::*;
 use walkdir::WalkDir;
 
+/// Supported hashing algorithms.
 #[derive(Copy, Clone, Debug)]
 pub enum Algorithm {
     Md5,
@@ -21,12 +24,14 @@ pub enum Algorithm {
     Blake3,
 }
 
+/// A hash target with optional name metadata.
 #[derive(Clone, Debug)]
 pub struct Target {
     pub hash: Vec<u8>,
     pub name: Option<String>,
 }
 
+/// Configuration for a search across files.
 pub struct SearchConfig {
     pub dir: PathBuf,
     pub algorithm: Algorithm,
@@ -34,13 +39,20 @@ pub struct SearchConfig {
     pub threads: Option<usize>,
 }
 
+/// A matched target found on disk.
 #[derive(Clone, Debug)]
 pub struct MatchResult {
     pub path: PathBuf,
     pub target: Target,
 }
 
-pub fn search(config: SearchConfig) -> io::Result<Vec<MatchResult>> {
+/// Search the directory for matching hashes.
+///
+/// # Errors
+///
+/// Returns an error if no targets are provided, if the thread pool cannot be
+/// created, or if filesystem traversal fails.
+pub fn search(config: &SearchConfig) -> io::Result<Vec<MatchResult>> {
     if config.targets.is_empty() {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
@@ -52,7 +64,7 @@ pub fn search(config: SearchConfig) -> io::Result<Vec<MatchResult>> {
         rayon::ThreadPoolBuilder::new()
             .num_threads(threads)
             .build_global()
-            .map_err(|err| io::Error::new(io::ErrorKind::Other, err))?;
+            .map_err(io::Error::other)?;
     }
 
     let (name_map, hash_only) = split_targets(&config.targets);
@@ -61,7 +73,7 @@ pub fn search(config: SearchConfig) -> io::Result<Vec<MatchResult>> {
         .follow_links(false)
         .into_iter()
         .par_bridge()
-        .filter_map(|entry| entry.ok())
+        .filter_map(Result::ok)
         .filter(|entry| entry.file_type().is_file())
         .filter_map(|entry| {
             let path = entry.path().to_path_buf();
@@ -109,6 +121,12 @@ pub fn search(config: SearchConfig) -> io::Result<Vec<MatchResult>> {
     Ok(output)
 }
 
+/// Load batch targets from a file.
+///
+/// # Errors
+///
+/// Returns an error if the file cannot be read, if a line is malformed, or if
+/// a hash cannot be parsed.
 pub fn load_batch(path: &Path) -> io::Result<Vec<Target>> {
     let file = File::open(path)?;
     let reader = BufReader::new(file);
@@ -123,7 +141,7 @@ pub fn load_batch(path: &Path) -> io::Result<Vec<Target>> {
         let hash = parts
             .next()
             .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "missing hash"))?;
-        let name = parts.next().map(|value| value.to_string());
+        let name = parts.next().map(std::string::ToString::to_string);
         if parts.next().is_some() {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
@@ -141,6 +159,11 @@ pub fn load_batch(path: &Path) -> io::Result<Vec<Target>> {
     Ok(targets)
 }
 
+/// Parse a hex string into bytes.
+///
+/// # Errors
+///
+/// Returns an error if the input is not valid hex.
 pub fn parse_hex(input: &str) -> io::Result<Vec<u8>> {
     let cleaned = input.trim();
     hex::decode(cleaned).map_err(|err| io::Error::new(io::ErrorKind::InvalidInput, err))
@@ -182,7 +205,7 @@ fn compute_hash(path: &Path, algo: Algorithm) -> io::Result<Vec<u8>> {
 
 fn hash_with_digest<D: Digest>(reader: &mut BufReader<File>) -> io::Result<Vec<u8>> {
     let mut hasher = D::new();
-    let mut buffer = [0u8; 128 * 1024];
+    let mut buffer = vec![0u8; 128 * 1024];
     loop {
         let read = reader.read(&mut buffer)?;
         if read == 0 {
@@ -195,7 +218,7 @@ fn hash_with_digest<D: Digest>(reader: &mut BufReader<File>) -> io::Result<Vec<u
 
 fn hash_blake3(reader: &mut BufReader<File>) -> io::Result<Vec<u8>> {
     let mut hasher = blake3::Hasher::new();
-    let mut buffer = [0u8; 128 * 1024];
+    let mut buffer = vec![0u8; 128 * 1024];
     loop {
         let read = reader.read(&mut buffer)?;
         if read == 0 {

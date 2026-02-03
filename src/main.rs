@@ -1,3 +1,5 @@
+#![deny(clippy::pedantic)]
+
 use std::fs;
 use std::path::PathBuf;
 
@@ -87,31 +89,31 @@ fn main() -> std::io::Result<()> {
         }]
     };
 
-    let results = hash_hunter::search(hash_hunter::SearchConfig {
+    let config = hash_hunter::SearchConfig {
         dir: cli.dir,
         algorithm: cli.algo.into(),
         targets: targets.clone(),
         threads: cli.threads,
-    })?;
+    };
+    let results = hash_hunter::search(&config)?;
 
     let mut found = vec![false; targets.len()];
     let mut output_lines = Vec::new();
     for result in results {
         if let Some((idx, _)) = targets.iter().enumerate().find(|(_, target)| {
             target.hash == result.target.hash && target.name == result.target.name
-        }) {
-            if !found[idx] {
-                let name_display = result
-                    .target
-                    .name
-                    .as_ref()
-                    .map(|value| format!(" ({value})"))
-                    .unwrap_or_default();
-                let line = format!("match: {}{}", result.path.display(), name_display);
-                println!("{line}");
-                output_lines.push(line);
-                found[idx] = true;
-            }
+        }) && !found[idx]
+        {
+            let name_display = result
+                .target
+                .name
+                .as_ref()
+                .map(|value| format!(" ({value})"))
+                .unwrap_or_default();
+            let line = format!("match: {}{}", result.path.display(), name_display);
+            println!("{line}");
+            output_lines.push(line);
+            found[idx] = true;
         }
     }
 
