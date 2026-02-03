@@ -329,3 +329,203 @@ fn hash_blake3(reader: &mut BufReader<File>) -> io::Result<Vec<u8>> {
     }
     Ok(hasher.finalize().as_bytes().to_vec())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use std::io::Write;
+
+    fn write_file(dir: &tempfile::TempDir, name: &str, contents: &[u8]) -> PathBuf {
+        let path = dir.path().join(name);
+        let mut file = File::create(&path).expect("create file");
+        file.write_all(contents).expect("write file");
+        path
+    }
+
+    #[test]
+    fn parse_hex_trims_and_parses() {
+        let bytes = parse_hex(" 0a0b0c ").expect("parse hex");
+        assert_eq!(bytes, vec![0x0a, 0x0b, 0x0c]);
+    }
+
+    #[test]
+    fn parse_hex_rejects_invalid() {
+        let err = parse_hex("not-hex").expect_err("invalid hex should fail");
+        assert_eq!(err.kind(), io::ErrorKind::InvalidInput);
+    }
+
+    #[test]
+    fn load_batch_parses_names_and_hash_only() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("batch.txt");
+        fs::write(
+            &path,
+            "0a0b0c report.txt\n\n# comment line\n0d0e0f\n",
+        )
+        .expect("write batch");
+        let targets = load_batch(&path).expect("load batch");
+        assert_eq!(targets.len(), 2);
+        assert_eq!(targets[0].hash, vec![0x0a, 0x0b, 0x0c]);
+        assert_eq!(targets[0].name.as_deref(), Some("report.txt"));
+        assert_eq!(targets[1].hash, vec![0x0d, 0x0e, 0x0f]);
+        assert!(targets[1].name.is_none());
+    }
+
+    #[test]
+    fn load_batch_reports_too_many_fields() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("batch.txt");
+        fs::write(&path, "0a0b0c one two\n").expect("write batch");
+        let err = load_batch(&path).expect_err("expected too many fields error");
+        assert_eq!(err.kind(), io::ErrorKind::InvalidData);
+        assert!(err.to_string().contains("line 1"));
+    }
+
+    #[test]
+    fn load_batch_reports_invalid_hex_with_line_number() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("batch.txt");
+        fs::write(&path, "0a0b0c\nzzzz\n").expect("write batch");
+        let err = load_batch(&path).expect_err("expected invalid hex");
+        assert_eq!(err.kind(), io::ErrorKind::InvalidData);
+        assert!(err.to_string().contains("line 2"));
+    }
+
+    #[test]
+    fn split_targets_separates_named_and_hash_only() {
+        let targets = vec![
+            Target {
+                hash: vec![1],
+                name: Some("a.txt".to_string()),
+            },
+            Target {
+                hash: vec![2],
+                name: None,
+            },
+            Target {
+                hash: vec![3],
+                name: Some("a.txt".to_string()),
+            },
+        ];
+        let (name_map, hash_only) = split_targets(&targets);
+        assert_eq!(hash_only, vec![1]);
+        let entries = name_map.get("a.txt").expect("name entry");
+        assert_eq!(entries, &vec![0, 2]);
+    }
+
+    #[test]
+    fn compute_hash_errors_for_missing_file() {
+        let path = PathBuf::from("missing-file");
+        let err = compute_hash(&path, Algorithm::Sha256).expect_err("missing file");
+        assert_eq!(err.kind(), io::ErrorKind::NotFound);
+    }
+
+    #[test]
+    fn hash_with_digest_matches_md5() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = write_file(&dir, "file.txt", b"hash-hunter");
+        let file = File::open(&path).expect("open file");
+        let mut reader = BufReader::new(file);
+        let hash = hash_with_digest::<md5::Md5>(&mut reader).expect("hash");
+        let expected = md5::Md5::digest(b"hash-hunter").to_vec();
+        assert_eq!(hash, expected);
+    }
+
+    #[test]
+    fn hash_blake3_matches_expected() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = write_file(&dir, "file.txt", b"hash-hunter");
+        let file = File::open(&path).expect("open file");
+        let mut reader = BufReader::new(file);
+        let hash = hash_blake3(&mut reader).expect("hash");
+        let expected = blake3::hash(b"hash-hunter").as_bytes().to_vec();
+        assert_eq!(hash, expected);
+    }
+
+    #[test]
+    fn compute_hash_supports_all_algorithms() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = write_file(&dir, "file.txt", b"hash-hunter");
+        let cases = [
+            (Algorithm::Md5, md5::Md5::digest(b"hash-hunter").to_vec()),
+            (Algorithm::Sha1, sha1::Sha1::digest(b"hash-hunter").to_vec()),
+            (Algorithm::Sha256, sha2::Sha256::digest(b"hash-hunter").to_vec()),
+            (Algorithm::Sha512, sha2::Sha512::digest(b"hash-hunter").to_vec()),
+            (
+                Algorithm::Sha3_256,
+                sha3::Sha3_256::digest(b"hash-hunter").to_vec(),
+            ),
+            (
+                Algorithm::Sha3_512,
+                sha3::Sha3_512::digest(b"hash-hunter").to_vec(),
+            ),
+            (Algorithm::Blake2s, Blake2s256::digest(b"hash-hunter").to_vec()),
+            (Algorithm::Blake2b, Blake2b512::digest(b"hash-hunter").to_vec()),
+            (
+                Algorithm::Blake3,
+                blake3::hash(b"hash-hunter").as_bytes().to_vec(),
+            ),
+        ];
+        for (algo, expected) in cases {
+            let digest = compute_hash(&path, algo).expect("compute hash");
+            assert_eq!(digest, expected, "mismatch for {algo:?}");
+        }
+    }
+
+    #[test]
+    fn search_requires_targets() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let config = SearchConfig {
+            dir: dir.path().to_path_buf(),
+            algorithm: Algorithm::Sha256,
+            targets: Vec::new(),
+            threads: None,
+        };
+        let err = search(&config).expect_err("should require targets");
+        assert_eq!(err.kind(), io::ErrorKind::InvalidInput);
+    }
+
+    #[test]
+    fn search_matches_named_and_hash_only_targets() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let alpha_path = write_file(&dir, "alpha.txt", b"alpha");
+        let beta_path = write_file(&dir, "beta.txt", b"beta");
+        let alpha_hash = compute_hash(&alpha_path, Algorithm::Sha256).expect("hash");
+        let beta_hash = compute_hash(&beta_path, Algorithm::Sha256).expect("hash");
+        let targets = vec![
+            Target {
+                hash: alpha_hash.clone(),
+                name: Some("alpha.txt".to_string()),
+            },
+            Target {
+                hash: beta_hash.clone(),
+                name: None,
+            },
+            Target {
+                hash: vec![0xff],
+                name: Some("missing.txt".to_string()),
+            },
+        ];
+        let config = SearchConfig {
+            dir: dir.path().to_path_buf(),
+            algorithm: Algorithm::Sha256,
+            targets: targets.clone(),
+            threads: None,
+        };
+        let results = search(&config).expect("search");
+        assert_eq!(results.len(), 2);
+        let mut matched_paths: Vec<_> = results.iter().map(|result| result.path.clone()).collect();
+        matched_paths.sort();
+        let mut expected = vec![alpha_path, beta_path];
+        expected.sort();
+        assert_eq!(matched_paths, expected);
+        let matched_targets: Vec<_> = results.into_iter().map(|result| result.target).collect();
+        assert!(matched_targets.iter().any(|target| {
+            target.hash == targets[0].hash && target.name == targets[0].name
+        }));
+        assert!(matched_targets.iter().any(|target| {
+            target.hash == targets[1].hash && target.name == targets[1].name
+        }));
+    }
+}
