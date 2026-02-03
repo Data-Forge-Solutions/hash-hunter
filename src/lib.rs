@@ -46,6 +46,21 @@ pub struct MatchResult {
     pub target: Target,
 }
 
+/// Summary information from a [`search`] operation.
+#[derive(Debug)]
+pub struct SearchReport {
+    pub matches: Vec<MatchResult>,
+    pub total_files_checked: usize,
+    pub failed_files: Vec<FileCheckFailure>,
+}
+
+/// Details for a file that could not be checked during search.
+#[derive(Debug)]
+pub struct FileCheckFailure {
+    pub path: PathBuf,
+    pub error: String,
+}
+
 /// Search a directory tree for files whose hashes match configured targets.
 ///
 /// This walks the directory specified in [`SearchConfig::dir`] (without following
@@ -69,8 +84,8 @@ pub struct MatchResult {
 ///     threads: Some(4),
 /// };
 ///
-/// let matches = hash_hunter::search(&config)?;
-/// println!("matched {} file(s)", matches.len());
+/// let report = hash_hunter::search(&config)?;
+/// println!("matched {} file(s)", report.matches.len());
 /// # Ok::<(), std::io::Error>(())
 /// ```
 ///
@@ -83,7 +98,7 @@ pub struct MatchResult {
 ///
 /// Individual file hashing failures (for example, permission errors) are
 /// reported on stderr and do not abort the search.
-pub fn search(config: &SearchConfig) -> io::Result<Vec<MatchResult>> {
+pub fn search(config: &SearchConfig) -> io::Result<SearchReport> {
     if config.targets.is_empty() {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
@@ -124,18 +139,17 @@ pub fn search(config: &SearchConfig) -> io::Result<Vec<MatchResult>> {
                     matches.push(*idx);
                 }
             }
-            if matches.is_empty() {
-                None
-            } else {
-                Some(ResultEntry::Match { path, matches })
-            }
+            Some(ResultEntry::Hashed { path, matches })
         })
         .collect::<Vec<_>>();
 
     let mut output = Vec::new();
+    let mut failures = Vec::new();
+    let mut total_files_checked = 0usize;
     for result in results {
+        total_files_checked += 1;
         match result {
-            ResultEntry::Match { path, matches } => {
+            ResultEntry::Hashed { path, matches } => {
                 for idx in matches {
                     output.push(MatchResult {
                         path: path.clone(),
@@ -144,12 +158,20 @@ pub fn search(config: &SearchConfig) -> io::Result<Vec<MatchResult>> {
                 }
             }
             ResultEntry::Error { path, err } => {
+                failures.push(FileCheckFailure {
+                    path: path.clone(),
+                    error: err.to_string(),
+                });
                 eprintln!("failed to hash {}: {err}", path.display());
             }
         }
     }
 
-    Ok(output)
+    Ok(SearchReport {
+        matches: output,
+        total_files_checked,
+        failed_files: failures,
+    })
 }
 
 /// Load hash targets from a batch file.
@@ -236,7 +258,7 @@ pub fn parse_hex(input: &str) -> io::Result<Vec<u8>> {
 }
 
 enum ResultEntry {
-    Match { path: PathBuf, matches: Vec<usize> },
+    Hashed { path: PathBuf, matches: Vec<usize> },
     Error { path: PathBuf, err: io::Error },
 }
 
@@ -513,14 +535,22 @@ mod tests {
             targets: targets.clone(),
             threads: None,
         };
-        let results = search(&config).expect("search");
-        assert_eq!(results.len(), 2);
-        let mut matched_paths: Vec<_> = results.iter().map(|result| result.path.clone()).collect();
+        let report = search(&config).expect("search");
+        assert_eq!(report.matches.len(), 2);
+        let mut matched_paths: Vec<_> = report
+            .matches
+            .iter()
+            .map(|result| result.path.clone())
+            .collect();
         matched_paths.sort();
         let mut expected = vec![alpha_path, beta_path];
         expected.sort();
         assert_eq!(matched_paths, expected);
-        let matched_targets: Vec<_> = results.into_iter().map(|result| result.target).collect();
+        let matched_targets: Vec<_> = report
+            .matches
+            .into_iter()
+            .map(|result| result.target)
+            .collect();
         assert!(matched_targets.iter().any(|target| {
             target.hash == targets[0].hash && target.name == targets[0].name
         }));

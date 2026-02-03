@@ -113,11 +113,11 @@ fn main() -> std::io::Result<()> {
         targets: targets.clone(),
         threads: cli.threads,
     };
-    let results = hash_hunter::search(&config)?;
+    let report = hash_hunter::search(&config)?;
 
     let mut found = vec![false; targets.len()];
     let mut output_lines = Vec::new();
-    for result in results {
+    for result in report.matches {
         if let Some((idx, _)) = targets.iter().enumerate().find(|(_, target)| {
             target.hash == result.target.hash && target.name == result.target.name
         }) && !found[idx]
@@ -144,6 +144,28 @@ fn main() -> std::io::Result<()> {
                 .map(|value| format!(" ({value})"))
                 .unwrap_or_default();
             let line = format!("missing: {}{}", hex::encode(&target.hash), name_display);
+            println!("{line}");
+            output_lines.push(line);
+        }
+    }
+
+    let checked_line = format!("checked files: {}", report.total_files_checked);
+    println!("{checked_line}");
+    output_lines.push(checked_line);
+    if report.failed_files.is_empty() {
+        let unchecked_line = "unchecked files: none".to_string();
+        println!("{unchecked_line}");
+        output_lines.push(unchecked_line);
+    } else {
+        let unchecked_header = "unchecked files:".to_string();
+        println!("{unchecked_header}");
+        output_lines.push(unchecked_header);
+        for failure in &report.failed_files {
+            let line = format!(
+                " - {}: {}",
+                failure.path.display(),
+                failure.error
+            );
             println!("{line}");
             output_lines.push(line);
         }
