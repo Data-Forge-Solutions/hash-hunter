@@ -114,8 +114,9 @@ pub fn search(config: &SearchConfig) -> io::Result<SearchReport> {
     }
 
     let (name_map, hash_only) = split_targets(&config.targets);
+    let search_root = config.dir.canonicalize()?;
 
-    let results = WalkDir::new(&config.dir)
+    let results = WalkDir::new(&search_root)
         .follow_links(false)
         .into_iter()
         .par_bridge()
