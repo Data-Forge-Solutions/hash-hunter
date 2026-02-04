@@ -11,7 +11,7 @@ readme = "README.md"
 keywords = ["security", "ioc", "hash", "malware-detection", "threat-detection"]
 categories = [
     "command-line-utilities",
-    "security-tools",
+    "security",
     "cryptography",
     "filesystem",
 ]
