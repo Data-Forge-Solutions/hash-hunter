@@ -1,6 +1,6 @@
 [package]
 name = "hash-hunter"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 authors = ["Andrew Sims, andrew.sims@dataforgesolutions.com"]
 description = "Find files with specified hashes"

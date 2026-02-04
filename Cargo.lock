@@ -302,7 +302,7 @@ dependencies = [
 
 [[package]]
 name = "hash-hunter"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "blake2",
  "blake3",
