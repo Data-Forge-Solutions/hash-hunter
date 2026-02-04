@@ -2,11 +2,12 @@
 
 use std::collections::BTreeMap;
 use std::fs::File;
-use std::io::{self, BufRead, BufReader, Read};
+use std::io::{self, BufRead, BufReader, IsTerminal, Read};
 use std::path::{Path, PathBuf};
 
 use blake2::{Blake2b512, Blake2s256};
 use digest::Digest;
+use indicatif::{ParallelProgressIterator, ProgressBar, ProgressStyle};
 use rayon::prelude::*;
 use walkdir::WalkDir;
 
@@ -116,23 +117,35 @@ pub fn search(config: &SearchConfig) -> io::Result<SearchReport> {
     let (name_map, hash_only) = split_targets(&config.targets);
     let search_root = config.dir.canonicalize()?;
 
-    let results = WalkDir::new(&search_root)
+    let file_paths: Vec<PathBuf> = WalkDir::new(&search_root)
         .follow_links(false)
         .into_iter()
         .par_bridge()
         .filter_map(Result::ok)
         .filter(|entry| entry.file_type().is_file())
-        .filter_map(|entry| {
-            let file_name = entry.file_name().to_string_lossy().to_string();
+        .map(|entry| entry.path().to_path_buf())
+        .collect();
+
+    let progress = progress_bar(file_paths.len());
+    let results = file_paths
+        .par_iter()
+        .progress_with(progress.clone())
+        .filter_map(|path| {
+            let file_name = path
+                .file_name()
+                .map(|value| value.to_string_lossy().to_string())
+                .unwrap_or_default();
             let name_targets = name_map.get(&file_name).cloned().unwrap_or_default();
             let needs_hash = !name_targets.is_empty() || !hash_only.is_empty();
             if !needs_hash {
                 return Some(ResultEntry::SkippedNameMismatch);
             }
-            let path = entry.path().to_path_buf();
-            let hash = match compute_hash(&path, config.algorithm) {
+            let hash = match compute_hash(path, config.algorithm) {
                 Ok(value) => value,
-                Err(err) => return Some(ResultEntry::Error { path, err }),
+                Err(err) => return Some(ResultEntry::Error {
+                    path: path.clone(),
+                    err,
+                }),
             };
             let mut matches = Vec::new();
             for idx in name_targets.iter().chain(hash_only.iter()) {
@@ -140,9 +153,13 @@ pub fn search(config: &SearchConfig) -> io::Result<SearchReport> {
                     matches.push(*idx);
                 }
             }
-            Some(ResultEntry::Hashed { path, matches })
+            Some(ResultEntry::Hashed {
+                path: path.clone(),
+                matches,
+            })
         })
         .collect::<Vec<_>>();
+    progress.finish_with_message("scan complete");
 
     let mut output = Vec::new();
     let mut failures = Vec::new();
@@ -174,6 +191,22 @@ pub fn search(config: &SearchConfig) -> io::Result<SearchReport> {
         total_files_checked,
         failed_files: failures,
     })
+}
+
+fn progress_bar(total_files: usize) -> ProgressBar {
+    if !io::stderr().is_terminal() {
+        return ProgressBar::hidden();
+    }
+
+    let progress = ProgressBar::new(total_files as u64);
+    let style = ProgressStyle::with_template(
+        "{spinner:.green} [{elapsed_precise}] {msg} {bar:40.cyan/blue} {pos}/{len} files ({eta})",
+    )
+    .unwrap_or_else(|_| ProgressStyle::default_bar())
+    .progress_chars("=>-");
+    progress.set_style(style);
+    progress.set_message("hashing");
+    progress
 }
 
 /// Load hash targets from a batch file.

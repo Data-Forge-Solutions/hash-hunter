@@ -9,6 +9,7 @@ blake3 = "1.5"
 clap = { version = "4.5", features = ["derive"] }
 digest = "0.10"
 hex = "0.4"
+indicatif = { version = "0.17", features = ["rayon"] }
 md-5 = "0.10"
 rayon = "1.10"
 sha1 = "0.10"
