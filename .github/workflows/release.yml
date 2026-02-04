@@ -50,20 +50,20 @@ jobs:
         shell: bash
         run: |
           mkdir dist
-          cp target/${{ matrix.target }}/release/rtnt${{ matrix.ext }} dist/rtnt-${{ matrix.target }}${{ matrix.ext }}
+          cp target/${{ matrix.target }}/release/hh${{ matrix.ext }} dist/hh-${{ matrix.target }}${{ matrix.ext }}
         # Only run zip if not Windows
       - name: Zip binary (non-Windows)
         if: matrix.os != 'windows-latest'
         shell: bash
         run: |
           cd dist
-          zip rtnt-${{ matrix.target }}.zip rtnt-${{ matrix.target }}${{ matrix.ext }}
+          zip hh-${{ matrix.target }}.zip hh-${{ matrix.target }}${{ matrix.ext }}
 
       - name: Zip binary (Windows)
         if: matrix.os == 'windows-latest'
         shell: pwsh
         run: |
-          Compress-Archive -Path dist/rtnt-${{ matrix.target }}.exe -DestinationPath dist/rtnt-${{ matrix.target }}.zip
+          Compress-Archive -Path dist/hh-${{ matrix.target }}.exe -DestinationPath dist/hh-${{ matrix.target }}.zip
 
       - name: Upload Release Assets
         uses: softprops/action-gh-release@v1
