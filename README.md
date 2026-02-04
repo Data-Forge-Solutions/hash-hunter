@@ -20,10 +20,10 @@ hashing, and batch searches for multiple targets.
 
 ## Installation
 
-Build from source with Cargo:
+Install from crates.io:
 
 ```bash
-cargo build --release
+cargo install hash-hunter
 ```
 
 ## Usage
@@ -31,19 +31,19 @@ cargo build --release
 Search a directory for a SHA-256 hash (default):
 
 ```bash
-cargo run -- --dir ./data --hash <hex-hash>
+hash-hunter --dir ./data --hash <hex-hash>
 ```
 
 Provide a file name to shortcut hashing when possible:
 
 ```bash
-cargo run -- --dir ./data --hash <hex-hash> --name report.pdf
+hash-hunter --dir ./data --hash <hex-hash> --name report.pdf
 ```
 
 Use a different algorithm:
 
 ```bash
-cargo run -- --dir ./data --algo sha3-256 --hash <hex-hash>
+hash-hunter --dir ./data --algo sha3-256 --hash <hex-hash>
 ```
 
 Batch mode (one target per line):
@@ -55,13 +55,13 @@ Batch mode (one target per line):
 ```
 
 ```bash
-cargo run -- --dir ./data --algo sha256 --batch batch.txt
+hash-hunter --dir ./data --algo sha256 --batch batch.txt
 ```
 
 Write results to a text file:
 
 ```bash
-cargo run -- --dir ./data --hash <hex-hash> --output results.txt
+hash-hunter --dir ./data --hash <hex-hash> --output results.txt
 ```
 
 ## Output
