@@ -178,14 +178,14 @@ pub fn search(config: &SearchConfig) -> io::Result<SearchReport> {
             ResultEntry::Hashed { path, matches } => {
                 for idx in matches {
                     output.push(MatchResult {
-                        path: path.clone(),
+                        path: normalize_path(&path),
                         target: config.targets[idx].clone(),
                     });
                 }
             }
             ResultEntry::Error { path, err } => {
                 failures.push(FileCheckFailure {
-                    path: path.clone(),
+                    path: normalize_path(&path),
                     error: err.to_string(),
                 });
                 eprintln!("failed to hash {}: {err}", path.display());
@@ -221,6 +221,25 @@ fn progress_bar(total_files: usize) -> ProgressBar {
     progress.set_style(style);
     progress.set_message("hashing");
     progress
+}
+
+#[cfg(windows)]
+fn normalize_path(path: &Path) -> PathBuf {
+    let path_str = path.to_string_lossy();
+    if let Some(stripped) = path_str.strip_prefix(r"\\?\") {
+        if let Some(unc_path) = stripped.strip_prefix("UNC\\") {
+            PathBuf::from(format!(r"\\{}", unc_path))
+        } else {
+            PathBuf::from(stripped)
+        }
+    } else {
+        path.to_path_buf()
+    }
+}
+
+#[cfg(not(windows))]
+fn normalize_path(path: &Path) -> PathBuf {
+    path.to_path_buf()
 }
 
 /// Load hash targets from a batch file.
