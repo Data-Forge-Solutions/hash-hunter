@@ -8,15 +8,7 @@ license = "MIT OR Apache-2.0"
 repository = "https://github.com/Data-Forge-Solutions/hash-hunter"
 homepage = "https://github.com/Data-Forge-Solutions/hash-hunter"
 readme = "README.md"
-keywords = [
-    "security",
-    "ioc",
-    "hash",
-    "incident-response",
-    "audit",
-    "malware-detection",
-    "threat-detection",
-]
+keywords = ["security", "ioc", "hash", "malware-detection", "threat-detection"]
 categories = [
     "command-line-utilities",
     "security-tools",
