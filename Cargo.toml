@@ -15,7 +15,7 @@ categories = [
     "cryptography",
     "filesystem",
 ]
-default-run = "hh"
+default-run = "hashhunter"
 
 [dependencies]
 blake2 = "0.10"
@@ -38,5 +38,5 @@ tempfile = "3.10"
 pedantic = "deny"
 
 [[bin]]
-name = "hh"
+name = "hashhunter"
 path = "src/main.rs"

@@ -31,19 +31,19 @@ cargo install hash-hunter
 Search a directory for a SHA-256 hash (default):
 
 ```bash
-hash-hunter --dir ./data --hash <hex-hash>
+hashhunter --dir ./data --hash <hex-hash>
 ```
 
 Provide a file name to shortcut hashing when possible:
 
 ```bash
-hash-hunter --dir ./data --hash <hex-hash> --name report.pdf
+hashhunter --dir ./data --hash <hex-hash> --name report.pdf
 ```
 
 Use a different algorithm:
 
 ```bash
-hash-hunter --dir ./data --algo sha3-256 --hash <hex-hash>
+hashhunter --dir ./data --algo sha3-256 --hash <hex-hash>
 ```
 
 Batch mode (one target per line):
@@ -55,13 +55,13 @@ Batch mode (one target per line):
 ```
 
 ```bash
-hash-hunter --dir ./data --algo sha256 --batch batch.txt
+hashhunter --dir ./data --algo sha256 --batch batch.txt
 ```
 
 Write results to a text file:
 
 ```bash
-hash-hunter --dir ./data --hash <hex-hash> --output results.txt
+hashhunter --dir ./data --hash <hex-hash> --output results.txt
 ```
 
 ## Output
