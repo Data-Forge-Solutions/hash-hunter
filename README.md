@@ -1,11 +1,24 @@
 # Hash-Hunter
 
-Search for files by hash (and optionally file name) with support for common
-hashing algorithms. You can search for a single hash or provide a batch file of
-hash/name pairs.
+Hash-Hunter is a Rust CLI and library for locating files by cryptographic hash.
+It supports common algorithms, optional name matching to avoid unnecessary
+hashing, and batch searches for multiple targets.
 
-The core logic is available as a library via `hash_hunter::search` if you'd like
-to embed the search in another application.
+## Features
+
+- Search directories for a target hash with optional file name filtering.
+- Batch mode for multiple hashes and hash/name pairs.
+- Multiple hashing algorithms (for example, SHA-256 and SHA3-256).
+- Results can be streamed to stdout or written to a file.
+- Library API for embedding search logic in other applications.
+
+## Installation
+
+Build from source with Cargo:
+
+```bash
+cargo build --release
+```
 
 ## Usage
 
@@ -44,3 +57,20 @@ Write results to a text file:
 ```bash
 cargo run -- --dir ./data --hash <hex-hash> --output results.txt
 ```
+
+## Output
+
+Results are written to stdout and optionally to `--output`. Matches are printed
+as `match: <path> (name)` and missing targets are printed as
+`missing: <hash> (name)`. The summary includes total checked files plus any
+unchecked files that failed to hash.
+
+## Library usage
+
+The core logic is available as a library via `hash_hunter::search` for
+applications that need to embed the search behavior directly.
+
+## Notes
+
+- Hash inputs must be hexadecimal without a leading prefix.
+- File name filtering is an optimization and does not replace hash validation.
