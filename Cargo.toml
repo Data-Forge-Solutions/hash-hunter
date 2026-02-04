@@ -2,6 +2,28 @@
 name = "hash-hunter"
 version = "0.1.0"
 edition = "2024"
+authors = ["Andrew Sims, andrew.sims@dataforgesolutions.com"]
+description = "Find files with specified hashes"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/Data-Forge-Solutions/hash-hunter"
+homepage = "https://github.com/Data-Forge-Solutions/hash-hunter"
+readme = "README.md"
+keywords = [
+    "security",
+    "ioc",
+    "hash",
+    "incident-response",
+    "audit",
+    "malware-detection",
+    "threat-detection",
+]
+categories = [
+    "command-line-utilities",
+    "security-tools",
+    "cryptography",
+    "filesystem",
+]
+default-run = "hh"
 
 [dependencies]
 blake2 = "0.10"
@@ -9,7 +31,7 @@ blake3 = "1.5"
 clap = { version = "4.5", features = ["derive"] }
 digest = "0.10"
 hex = "0.4"
-indicatif = { version = "0.17", features = ["rayon"] }
+indicatif = { version = "0.18.3", features = ["rayon"] }
 md-5 = "0.10"
 rayon = "1.10"
 sha1 = "0.10"
@@ -22,3 +44,7 @@ tempfile = "3.10"
 
 [lints.clippy]
 pedantic = "deny"
+
+[[bin]]
+name = "hh"
+path = "src/main.rs"
