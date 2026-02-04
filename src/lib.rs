@@ -123,13 +123,13 @@ pub fn search(config: &SearchConfig) -> io::Result<SearchReport> {
         .filter_map(Result::ok)
         .filter(|entry| entry.file_type().is_file())
         .filter_map(|entry| {
-            let path = entry.path().to_path_buf();
             let file_name = entry.file_name().to_string_lossy().to_string();
             let name_targets = name_map.get(&file_name).cloned().unwrap_or_default();
             let needs_hash = !name_targets.is_empty() || !hash_only.is_empty();
             if !needs_hash {
-                return None;
+                return Some(ResultEntry::SkippedNameMismatch);
             }
+            let path = entry.path().to_path_buf();
             let hash = match compute_hash(&path, config.algorithm) {
                 Ok(value) => value,
                 Err(err) => return Some(ResultEntry::Error { path, err }),
@@ -165,6 +165,7 @@ pub fn search(config: &SearchConfig) -> io::Result<SearchReport> {
                 });
                 eprintln!("failed to hash {}: {err}", path.display());
             }
+            ResultEntry::SkippedNameMismatch => {}
         }
     }
 
@@ -261,6 +262,7 @@ pub fn parse_hex(input: &str) -> io::Result<Vec<u8>> {
 enum ResultEntry {
     Hashed { path: PathBuf, matches: Vec<usize> },
     Error { path: PathBuf, err: io::Error },
+    SkippedNameMismatch,
 }
 
 /// Partition targets into a filename map and a hash-only list.
@@ -558,5 +560,25 @@ mod tests {
         assert!(matched_targets.iter().any(|target| {
             target.hash == targets[1].hash && target.name == targets[1].name
         }));
+    }
+
+    #[test]
+    fn search_counts_name_mismatches_as_checked() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let alpha_path = write_file(&dir, "alpha.txt", b"alpha");
+        write_file(&dir, "beta.txt", b"beta");
+        let alpha_hash = compute_hash(&alpha_path, Algorithm::Sha256).expect("hash");
+        let targets = vec![Target {
+            hash: alpha_hash,
+            name: Some("alpha.txt".to_string()),
+        }];
+        let config = SearchConfig {
+            dir: dir.path().to_path_buf(),
+            algorithm: Algorithm::Sha256,
+            targets,
+            threads: None,
+        };
+        let report = search(&config).expect("search");
+        assert_eq!(report.total_files_checked, 2);
     }
 }
